@@ -126,3 +126,51 @@ def plot_loss_curve(train_losses, val_losses, save_path="loss_curve.png"):
     plt.savefig(save_path, dpi=200)
     plt.close()
     print(f"Loss curve saved: {save_path}")
+    
+    import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+def traj_draw(data):
+# 你的三维坐标数据
+    data
+
+    # 分离x, y, z坐标
+    x = data[:, 0]
+    y = data[:, 1]
+    z = data[:, 2]
+
+    # 创建3D图形
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
+
+    # 绘制轨迹线
+    ax.plot(x, y, z, 'b-', linewidth=2, label='3D Trajectory')
+
+    # 绘制数据点
+    ax.scatter(x, y, z, c='red', s=50, marker='o', label='Data Points')
+
+    # 标注每个点的序号
+    for i, (xi, yi, zi) in enumerate(zip(x, y, z)):
+        ax.text(xi, yi, zi, f'{i+1}', fontsize=10, ha='right', va='bottom')
+
+    # 设置坐标轴标签
+    ax.set_xlabel('X Coordinate', fontsize=12)
+    ax.set_ylabel('Y Coordinate', fontsize=12)
+    ax.set_zlabel('Z Coordinate', fontsize=12)
+
+    # 设置标题
+    ax.set_title('3D Trajectory Plot', fontsize=14, fontweight='bold')
+
+    # 添加图例
+    ax.legend()
+
+    # 设置视角（可选，调整为更好的观察角度）
+    ax.view_init(elev=20, azim=45)
+
+    # 显示网格
+    ax.grid(True)
+
+    # 显示图形
+    plt.tight_layout()
+    plt.show()

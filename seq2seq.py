@@ -14,6 +14,14 @@ class Encoder(nn.Module):
             self.output_proj = nn.Linear(hidden_size * 2, hidden_size)
             self.h_proj = nn.Linear(hidden_size * 2, hidden_size)
             self.c_proj = nn.Linear(hidden_size * 2, hidden_size)
+            
+        elif type == "rnn":
+            self.rnn = nn.RNN(input_size, hidden_size, num_layers,
+                               batch_first=True, dropout=0.2)
+            # [优化] 单向时不需要投影层，注册为 None 避免被 optimizer 追踪
+            self.output_proj = None
+            self.h_proj = None
+            self.c_proj = None
         else:
             self.rnn = nn.LSTM(input_size, hidden_size, num_layers,
                                batch_first=True, dropout=0.2)
@@ -41,17 +49,25 @@ class Encoder(nn.Module):
             c = torch.cat([c[:, 0], c[:, 1]], dim=-1)
             c = torch.tanh(self.c_proj(c))
             
+        elif self.type == "rnn":
+            encoder_outputs,new_state = self.rnn(x, state)
+            
+            
         else:
-            encoder_outputs, (h, c) = self.rnn(x, state)
+            encoder_outputs,new_state = self.rnn(x, state)
 
-        return encoder_outputs, h, c
+        return encoder_outputs, new_state
 
 
 class Decoder(nn.Module):
-    def __init__(self, de_input_size, hidden_size, num_layers):
+    def __init__(self, de_input_size, hidden_size, num_layers,type):
         super().__init__()
-        self.rnn = nn.LSTM(de_input_size, hidden_size, num_layers,
-                           batch_first=True, dropout=0.2)
+        if type == "rnn":
+            self.rnn = nn.RNN(de_input_size, hidden_size, num_layers,
+                    batch_first=True, dropout=0.2)
+        else:
+            self.rnn = nn.LSTM(de_input_size, hidden_size, num_layers,
+                            batch_first=True, dropout=0.2)
 
     def forward(self, x, state):
         y_hat, new_state = self.rnn(x, state)
@@ -61,17 +77,14 @@ class Decoder(nn.Module):
 class Seq2Seq(nn.Module):
 
     def __init__(self, input_size, de_input_size,hidden_size, output_size, num_layers,
-                 linear_size, pred_steps, train_steps,type = "bi-lstm"):
+                 linear_size, pred_steps, train_steps,type = None):
         super().__init__()
         self.output_size = output_size
         self.pred_steps = pred_steps
         self.train_steps = train_steps
-        if type == "bi-lstm":
-            self.encoder = Encoder(input_size, hidden_size, num_layers,type=type)
-        else:
-            self.encoder = Encoder(input_size, hidden_size, num_layers,type=None)
-        self.decoder = Decoder(de_input_size, hidden_size, num_layers)
-
+        
+        self.encoder = Encoder(input_size, hidden_size, num_layers,type)   
+        self.decoder = Decoder(de_input_size, hidden_size, num_layers,type)
         self.dropout = nn.Dropout(0.2)
         self.linear_out = nn.Linear(hidden_size * 2, linear_size)
         self.tanh = nn.Tanh()
@@ -94,19 +107,29 @@ class Seq2Seq(nn.Module):
 
     def forward(self, x, state, epoch=0, y=None, type=None):
         # ===========================================================================
-        # [Bug] train_time_seq 调用时传 epoch=0，导致 tf_ratio 恒为 0.95
-        #   应改为: net(x, state, epoch=epoch, y=y, type="train") 传入实际 epoch
+        # [准确度] train/val 两个分支的循环体几乎完全相同，已修复 epoch 传递问题
         # ===========================================================================
-        # [优化] train/val 两个分支的循环体几乎完全相同，建议合并为一个循环
-        #   仅 tf_ratio 和 decoder_input 来源不同，可用条件判断消除重复代码
+        # [准确度] tf_ratio 下限 0.1 导致模型从未体验完全自回归训练
+        #   训练后期应让 tf_ratio 降到 0，使训练与推理条件一致
+        #   建议: max(0.0, 0.95**epoch) 或使用 Scheduled Sampling 论文的线性衰减
         # ===========================================================================
-        # [优化] tf_ratio 下限 0.15 导致训练后期仍有 15% 强制教学
-        #   模型从未完全自主预测，val 时突然全自回归 => 位置误差大
-        #   建议: max(0.0, 0.95**epoch) 让后期完全自回归
+        # [准确度] 当前单头 Luong 注意力可能不够表达复杂轨迹模式
+        #   可尝试多头注意力: 将 hidden 拆为多个 head，各 head 独立计算再拼接
+        #   多头注意力可同时关注轨迹的不同时间模式(如趋势、周期、拐点)
+        #   实现: self.mha = nn.MultiheadAttention(embed_dim=hidden_size, num_heads=4, batch_first=True)
+        # ===========================================================================
+        # [准确度] 每个预测步骤的 decoder output 仅依赖当前 hidden state + 注意力
+        #   可加入残差连接: decoder_output = decoder_output + decoder_input
+        #   让模型学习"位置变化量"而非"绝对位置"，收敛更快更准
+        # ===========================================================================
+        # [准确度] decoder 自回归循环中，预测误差沿时间步累积
+        #   越靠后的预测步越不准确。可用时间衰减权重:
+        #     loss = mean([exp(-alpha * t) * criterion(y_hat[:,t], y[:,t]) for t in range(T)])
+        #   alpha=0 等权，alpha>0 近步权重大，alpha<0 远步权重大(鼓励长期预测)
         # ===========================================================================
         batch_size = x.shape[0]
 
-        encoder_outputs, h, c = self.encoder(x, state)
+        encoder_outputs, new_state = self.encoder(x, state)
         outputs = torch.empty(batch_size, self.pred_steps, self.output_size,
                               device=x.device)
         decoder_input = x[:, -1, :3].unsqueeze(1)
@@ -115,9 +138,9 @@ class Seq2Seq(nn.Module):
             tf_ratio = 0.0
 
             for t in range(self.pred_steps):
-                decoder_hidden, (h, c) = self.decoder(decoder_input, (h, c))
+                decoder_hidden, new_state = self.decoder(decoder_input, new_state)
                 decoder_output = self.Luongscore(encoder_outputs, decoder_hidden)
-                final_output = self.linear(decoder_output)
+                final_output = self.linear(decoder_output)+decoder_input.squeeze(1)
                 outputs[:, t, :] = final_output
                 if torch.rand(1).item() < tf_ratio:
                     decoder_input = y[:, t, :3].unsqueeze(1)
@@ -125,19 +148,20 @@ class Seq2Seq(nn.Module):
                     decoder_input = outputs[:, t, :].unsqueeze(1).detach()
 
         elif type == "train":
-            tf_ratio = max(0.1, 0.95 ** epoch)
+            tf_ratio = max(0, 0.96 ** epoch)
 
             for t in range(self.pred_steps):
-                decoder_hidden, (h, c) = self.decoder(decoder_input, (h, c))
+                decoder_hidden, new_state = self.decoder(decoder_input, new_state)
                 decoder_output = self.Luongscore(encoder_outputs, decoder_hidden)
-                final_output = self.linear(decoder_output)
+                final_output = self.linear(decoder_output)+decoder_input.squeeze(1)
                 outputs[:, t, :] = final_output
 
                 if torch.rand(1).item() < tf_ratio:
                     decoder_input = y[:, t, :3].unsqueeze(1)
                 else:
                     decoder_input = outputs[:, t, :].unsqueeze(1).detach()
+                    
+            new_state.detach()
 
-        h = h.detach()
-        c = c.detach()
-        return outputs, (h, c)
+
+        return outputs, new_state

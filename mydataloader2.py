@@ -33,6 +33,30 @@ class StandardScaler():
 
         np.savez("scaler.npz", pos_mean=self.pos_mean, vel_mean=self.vel_mean,
                  pos_std=self.pos_std, vel_std=self.vel_std)
+        
+    def battery_fit(self, dataset, train_ratio=0.8):
+        train_data = dataset[:int(len(dataset) * train_ratio)]
+        if len(train_data) == 0:
+            raise ValueError("Train dataset is empty, check train_ratio or dataset size")
+
+        all_data = np.concatenate(train_data, axis=0)
+        # 位置和速度分开标准化，量纲不同
+        self.v_mean = np.mean(all_data[:, 1], axis=0)
+        self.i_mean = np.mean(all_data[:, 2], axis=0)
+        self.t_mean = np.mean(all_data[:, 3], axis=0)
+        self.v_std = np.std(all_data[:, 1], axis=0)
+        self.i_std = np.std(all_data[:, 2], axis=0)
+        self.t_std = np.std(all_data[:, 3], axis=0)
+
+        if self.v_std == 0:
+            self.v_std = 1e-8
+        if self.i_std == 0:
+            self.i_std = 1e-8
+        if self.t_std == 0:
+            self.t_std = 1e-8
+        np.savez("scaler_battery.npz", v_mean=self.v_mean, v_std=self.v_std, 
+                 i_mean=self.i_mean ,i_std=self.i_std,
+                 t_mean=self.t_mean, t_std=self.t_std)
 
     def transform(self, dataset):
         # 向量化：一次性 concat + 标准化，再按原始长度 split
@@ -42,6 +66,23 @@ class StandardScaler():
         all_data[:, :3] = (all_data[:, :3] - self.pos_mean) / self.pos_std
         all_data[:, 3:6] = (all_data[:, 3:6] - self.vel_mean) / self.vel_std
         # all_data[:, 6:] = (all_data[:, 6:] - self.bear_mean) / self.bear_std
+
+        trans_data = []
+        start = 0
+        for length in lengths:
+            trans_data.append(torch.tensor(all_data[start:start + length]))
+            start += length
+
+        return trans_data
+    
+    def battery_transform(self, dataset):
+        # 向量化：一次性 concat + 标准化，再按原始长度 split
+        lengths = [len(seg) for seg in dataset]
+        all_data = np.concatenate([np.array(seg)[:, 1:] for seg in dataset], axis=0)
+
+        all_data[:, 0] = (all_data[:, 0] - self.v_mean) / self.v_std
+        all_data[:, 1] = (all_data[:, 1] - self.i_mean) / self.i_std
+        all_data[:, 2] = (all_data[:, 2] - self.t_mean) / self.t_std
 
         trans_data = []
         start = 0
@@ -72,13 +113,7 @@ class StandardScaler():
 
 def prepare_data(dataset, test_num=10, train_ratio=0.8, batch_size=32,
                  train_steps=20, pred_steps=12, type="train"):
-    # stride=5 减少窗口重叠，避免模型记忆冗余样本
-    # [重要] 当前 stride=1 导致相邻窗口仅错 1 步，几乎完全重叠
-    #   这造成: 1) 每 epoch 处理大量冗余样本，训练慢
-    #           2) 模型倾向于记忆而非学习轨迹动态
-    #           3) train/val 来自不同轨迹段，但窗口高度重叠 => 验证失去意义
-    #   建议: stride 至少设为 train_steps//2=10 或 pred_steps=20
-    #         减少 10~20 倍训练窗口数，每个 epoch 快 10~20 倍
+
     stride = 1
 
     data_list_x = []
@@ -160,6 +195,7 @@ class MyDataLoader(object):
         data_true_list = multi_steps_data(self.dataset, self.test_num,
                                            self.train_steps, input_size)
         return data_true_list
+    
 
 
 def init_state(batch_size, hidden_dim, device, num_layer, type="lstm"):
@@ -179,28 +215,14 @@ def init_state(batch_size, hidden_dim, device, num_layer, type="lstm"):
 
 
 def train_time_seq(time_seq_loader, net, epoch, hidden_size, num_layer,
-                   criterion, optimizer, device, scaler_amp):
-    # ===========================================================================
-    # [Bug] 第207行 net(x, state, epoch=0, ...) —— epoch 硬编码为 0
-    #   导致 seq2seq 中 tf_ratio = max(0.15, 0.95**0) = 0.95 恒成立
-    #   训练时从未降低 teacher forcing，val 全自回归时模型无法应对
-    #   应改为: net(x, state, epoch=epoch, y=y, type="train")
-    # ===========================================================================
-    # [优化] 损失权重：loss_pos + 0.1*loss_vel + 0.1*loss_bear
-    #   确保 pos/vel/bear 三项 loss 量级接近再加权，否则某项会主导优化
-    #   建议打印各项 loss 值确认量级，再调整权重
-    # ===========================================================================
-    # [优化] bearing 角度使用 sin(θ/2) 编码避免 2π 跳变，方向正确
-    #   注意: sin(θ/2) 在 [0, 2π] 范围内非单射，θ 和 θ+2π 映射相同
-    #   对于轨迹预测场景(角度连续变化)可行，但对大角度变化(>π)仍有歧义
-    # ===========================================================================
+                   criterion, optimizer, device, scaler_amp,type):
+
     net.train()
     total_loss = []
-    total_loss_pos = []
-
+    # total_loss_pos = []
     for x, y in time_seq_loader:
         batch_size = x.shape[0]
-        state = init_state(batch_size, hidden_size, device, num_layer)
+        state = init_state(batch_size, hidden_size, device, num_layer,type)
         x = x.float().to(device)
         y = y.float().to(device)
 
@@ -209,14 +231,7 @@ def train_time_seq(time_seq_loader, net, epoch, hidden_size, num_layer,
             y_hat,_ = net(x, state, epoch=epoch, y=y, type="train")
             y_pos = y[:, :, :3]
             loss_pos = criterion(y_hat, y_pos).mean()
-            
-            # y_vel = y[:, :, 3:6]
-            # y_hat_vel = torch.diff(y_hat, dim=1) / 0.1
-            # loss_vel = criterion(y_hat_vel, y_vel[:,1:]).mean()
-            
-            # y_bear = torch.sin(y[:, :, 6:]/2)
-            # y_hat_bear = torch.sin(torch.atan2(y_hat_vel[:,:,1], y_hat_vel[:,:,0]).unsqueeze(-1)/2)
-            # loss_bear = criterion(y_hat_bear, y_bear[:,1:]).mean()
+
             
             loss = loss_pos 
 
@@ -228,19 +243,24 @@ def train_time_seq(time_seq_loader, net, epoch, hidden_size, num_layer,
         scaler_amp.update()
 
         total_loss.append(loss.detach())
-        total_loss_pos.append(loss_pos.detach())
+        # total_loss_pos.append(loss_pos.detach())
 
-    return torch.stack(total_loss).mean(), torch.stack(total_loss_pos).mean()
+    return torch.stack(total_loss).mean()
 
 
-def val_time_seq(time_seq_loader, net, hidden_size, num_layer, criterion, device):
+def val_time_seq(time_seq_loader, net, hidden_size, num_layer, criterion, device,type):
+    # [准确度] 当前 val loss 只是平均位置 MSE，不反映多步预测的误差累积
+    #   预测第 1 步 vs 第 10 步的误差可能差一个数量级
+    #   建议分开记录: loss_step_0_3, loss_step_4_6, loss_step_7_9
+    #   观察模型预测能力随步长衰减的规律，针对性优化远步预测
+    # ===========================================================================
     net.eval()
     total_loss = []
     
     with torch.no_grad():
         for x, y in time_seq_loader:
             batch_size = x.shape[0]
-            state = init_state(batch_size, hidden_size, device, num_layer)
+            state = init_state(batch_size, hidden_size, device, num_layer,type)
             x = x.float().to(device)
             y = y.float().to(device)
 
@@ -268,14 +288,78 @@ def pred_time_seq(time_seq_loader, net, device, test_num, num_layer,
     return pred_list
 
 
+def train_battery_seq(time_seq_loader, net, epoch, hidden_size, num_layer,
+                   criterion_soc,criterion_cls, optimizer, device, scaler_amp,type):
+    net.train()
+    total_loss = []
+    for x, y in time_seq_loader:
+        batch_size = x.shape[0]
+        state = init_state(batch_size, hidden_size, device, num_layer,type)
+        x = x.float().to(device)
+        y = y.float().to(device)
+
+        with torch.amp.autocast('cuda'):
+            
+            soc_hat,cls_hat,a,b = net(x, state)
+            y_true = y[:, :, 5]
+            loss_soc = criterion_soc(soc_hat, y_true).mean()
+            y_cls = y[:,:,4].squeeze().long()
+            loss_cls = criterion_cls(cls_hat, y_cls).mean()
+            precision_soc = torch.exp(-a)
+            precision_cls = torch.exp(-b)
+            loss = precision_soc*loss_soc+precision_cls*loss_cls
+
+
+        optimizer.zero_grad()
+        scaler_amp.scale(loss).backward()
+        scaler_amp.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=1.0)
+        scaler_amp.step(optimizer)
+        scaler_amp.update()
+
+        total_loss.append(loss.detach())
+    return torch.stack(total_loss).mean()
+
+
+def val_battery_seq(time_seq_loader, net, hidden_size, num_layer, criterion_soc,criterion_cls, device,type):
+
+    net.eval()
+    total_loss = []
+    
+    with torch.no_grad():
+        for x, y in time_seq_loader:
+            batch_size = x.shape[0]
+            state = init_state(batch_size, hidden_size, device, num_layer,type)
+            x = x.float().to(device)
+            y = y.float().to(device)
+            
+            soc_hat,cls_hat,a,b = net(x, state)
+            y_true = y[:, :, 5]
+            loss_soc = criterion_soc(soc_hat, y_true).mean()
+            y_cls = y[:,:,4].squeeze().long()
+            loss_cls = criterion_cls(cls_hat, y_cls).mean()
+            precision_soc = torch.exp(-a)
+            precision_cls = torch.exp(-b)
+            loss = precision_soc*loss_soc+precision_cls*loss_cls
+            
+            total_loss.append(loss.detach())
+
+    return torch.stack(total_loss).mean()
+
+
 def lr_warmup(epoch):
     warmup_epochs = 5
     if epoch < warmup_epochs:
         return (epoch + 1) / warmup_epochs
     else:
         return 1.0
+    
+def lr_down(epoch):
+
+    return 0.99**epoch
+
 
 
 __all__ = ["prepare_data", "multi_steps_data", "MyDataLoader", "init_state",
            "train_time_seq", "val_time_seq", "pred_time_seq", "StandardScaler",
-           "lr_warmup"]
+           "lr_warmup","train_battery_seq","val_battery_seq","lr_down"]
