@@ -1,0 +1,37 @@
+poch ended: 0
+  0%|                                | 1/500 [06:13<51:50:13, 373.98s/it, lr=0.00500000, train_loss=0.00558201, val_loss=0.00688408]epoch ended: 1
+  0%|▏                               | 2/500 [12:29<51:50:56, 374.81s/it, lr=0.00500000, train_loss=0.00066910, val_loss=0.00490600]epoch ended: 2
+  1%|▏                               | 3/500 [18:41<51:35:16, 373.68s/it, lr=0.00500000, train_loss=0.00042863, val_loss=0.00159091]epoch ended: 3
+  1%|▎                               | 4/500 [24:53<51:24:15, 373.10s/it, lr=0.00500000, train_loss=0.01297332, val_loss=0.01247940]epoch ended: 4
+  1%|▎                               | 5/500 [31:06<51:15:44, 372.82s/it, lr=0.00500000, train_loss=0.00522709, val_loss=0.00710031]epoch ended: 5
+  1%|▍                               | 6/500 [37:18<51:07:42, 372.60s/it, lr=0.00500000, train_loss=0.00281784, val_loss=0.00730996]epoch ended: 6
+  1%|▍                               | 7/500 [43:30<50:59:51, 372.40s/it, lr=0.00375000, train_loss=0.00256535, val_loss=0.02063625]epoch ended: 7
+  2%|▌                               | 8/500 [49:43<50:55:29, 372.62s/it, lr=0.00375000, train_loss=0.00224843, val_loss=0.01637875]epoch ended: 8
+  2%|▌                               | 9/500 [55:56<50:49:15, 372.62s/it, lr=0.00375000, train_loss=0.00233358, val_loss=0.04032714]epoch ended: 9
+  2%|▌                            | 10/500 [1:02:08<50:42:18, 372.53s/it, lr=0.00281250, train_loss=0.00206602, val_loss=0.00533215]epoch ended: 10
+  2%|▋                            | 11/500 [1:08:22<50:41:04, 373.14s/it, lr=0.00281250, train_loss=0.00206130, val_loss=0.00493253]epoch ended: 11
+  2%|▋                            | 12/500 [1:14:33<50:29:25, 372.47s/it, lr=0.00281250, train_loss=0.00200512, val_loss=0.01018014]epoch ended: 12
+  3%|▊                            | 13/500 [1:20:48<50:28:25, 373.11s/it, lr=0.00210938, train_loss=0.00148500, val_loss=0.00514730]epoch ended: 13
+  3%|▊                            | 14/500 [1:26:57<50:11:50, 371.83s/it, lr=0.00210938, train_loss=0.00150487, val_loss=0.00379183]epoch ended: 14
+  3%|▊                            | 15/500 [1:33:06<49:59:38, 371.09s/it, lr=0.00210938, train_loss=0.00149863, val_loss=0.00370563]epoch ended: 15
+  3%|▉                            | 16/500 [1:39:18<49:54:11, 371.18s/it, lr=0.00158203, train_loss=0.00125178, val_loss=0.00638568]epoch ended: 16
+  3%|▉                            | 17/500 [1:45:26<49:40:04, 370.20s/it, lr=0.00158203, train_loss=0.00134075, val_loss=0.00330507]epoch ended: 17
+  4%|█                            | 18/500 [1:51:35<49:31:55, 369.95s/it, lr=0.00158203, train_loss=0.00129472, val_loss=0.00321643]epoch ended: 18
+  4%|█                            | 19/500 [1:57:44<49:23:22, 369.65s/it, lr=0.00118652, train_loss=0.00113798, val_loss=0.00375523]epoch ended: 19
+  4%|█▏                           | 20/500 [2:03:53<49:14:53, 369.36s/it, lr=0.00118652, train_loss=0.00121231, val_loss=0.00318552]epoch ended: 20
+  4%|█▏                           | 21/500 [2:10:02<49:08:38, 369.35s/it, lr=0.00118652, train_loss=0.00121754, val_loss=0.00348231]epoch ended: 21
+  4%|█▎                           | 22/500 [2:16:11<49:01:45, 369.26s/it, lr=0.00088989, train_loss=0.00111423, val_loss=0.00361167]epoch ended: 22
+  5%|█▎                           | 23/500 [2:22:20<48:55:31, 369.25s/it, lr=0.00088989, train_loss=0.00108525, val_loss=0.00341071]epoch ended: 23
+  5%|█▍                           | 24/500 [2:28:28<48:46:53, 368.94s/it, lr=0.00088989, train_loss=0.00108902, val_loss=0.00297582]epoch ended: 24
+  5%|█▍                           | 25/500 [2:34:39<48:44:43, 369.44s/it, lr=0.00066742, train_loss=0.00100452, val_loss=0.00281124]epoch ended: 25
+  5%|█▌                           | 26/500 [2:40:48<48:36:50, 369.22s/it, lr=0.00066742, train_loss=0.00104190, val_loss=0.00291455]epoch ended: 26
+  5%|█▌                           | 27/500 [2:46:59<48:35:20, 369.81s/it, lr=0.00066742, train_loss=0.00103822, val_loss=0.00268907]epoch ended: 27
+  6%|█▌                           | 28/500 [2:53:09<48:30:47, 370.02s/it, lr=0.00050056, train_loss=0.00100486, val_loss=0.00262238]epoch ended: 28
+  6%|█▋                           | 29/500 [2:59:17<48:18:31, 369.24s/it, lr=0.00050056, train_loss=0.00101755, val_loss=0.00296499]epoch ended: 29
+  6%|█▋                           | 30/500 [3:05:27<48:15:34, 369.65s/it, lr=0.00050056, train_loss=0.00103218, val_loss=0.00253980]epoch ended: 30
+  6%|█▊                           | 31/500 [3:11:36<48:06:12, 369.24s/it, lr=0.00037542, train_loss=0.00100113, val_loss=0.00246312]epoch ended: 31
+  6%|█▍                    | 32/500 [3:23:57<48:01:34, 369.43s/it, early_stop=best=0.001591, train_loss=0.001027, val_loss=0.002508]
+Early stopping at epoch 32, best val_loss: 0.001591
+  6%|█▍                    | 32/500 [3:23:57<49:42:52, 382.42s/it, early_stop=best=0.001591, train_loss=0.001027, val_loss=0.002508]
+Loss curve saved: loss_curve.png
+PS C:\Users\Administrator\Desktop\Trajectory-Prediction-of-eVTOL-Based-on-LSTM-main\Trajectory-Prediction-of-eVTOL-Based-on-LSTM-main> 
